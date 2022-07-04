@@ -1,9 +1,12 @@
 package vars
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/bool64/shared"
 	"github.com/cucumber/godog"
@@ -75,12 +78,18 @@ func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
 }
 
 func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Context, error) {
+	ctx, v := s.JSONComparer.Vars.Fork(ctx)
+
+	rv, err := replaceString(value, v)
+	if err != nil {
+		return ctx, fmt.Errorf("failed to replace vars in %s: %w", value, err)
+	}
+
 	var val interface{}
-	if err := json.Unmarshal([]byte(value), &val); err != nil {
+	if err := json.Unmarshal([]byte(rv), &val); err != nil {
 		return ctx, fmt.Errorf("failed to decode variable %s with value %s as JSON: %w", name, value, err)
 	}
 
-	ctx, v := s.JSONComparer.Vars.Fork(ctx)
 	v.Set(s.varPrefix+name, val)
 
 	return ctx, nil
@@ -89,12 +98,17 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 	_, v := s.JSONComparer.Vars.Fork(ctx)
 
+	rv, err := replaceString(value, v)
+	if err != nil {
+		return fmt.Errorf("failed to replace vars in %s: %w", value, err)
+	}
+
 	stored, found := v.Get(s.varPrefix + name)
 	if !found {
 		return fmt.Errorf("could not find variable %s", name)
 	}
 
-	if err := assertjson.FailNotEqualMarshal([]byte(value), stored); err != nil {
+	if err := assertjson.FailNotEqualMarshal([]byte(rv), stored); err != nil {
 		return fmt.Errorf("variable %s assertion failed: %w", name, err)
 	}
 
@@ -111,6 +125,11 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
+
+		value, err := replaceString(value, v)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to replace vars in %s: %w", row.Cells[1].Value, err)
+		}
 
 		var val interface{}
 		if err := json.Unmarshal([]byte(value), &val); err != nil {
@@ -134,6 +153,11 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
+		value, err := replaceString(value, v)
+		if err != nil {
+			return fmt.Errorf("failed to replace vars in %s: %w", row.Cells[1].Value, err)
+		}
+
 		stored, found := v.Get(name)
 		if !found {
 			return fmt.Errorf("could not find variable %s", name)
@@ -145,4 +169,39 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 	}
 
 	return nil
+}
+
+func replaceString(s string, vars *shared.Vars) (string, error) {
+	if vars != nil {
+		type kv struct {
+			k string
+			v string
+		}
+
+		vv := vars.GetAll()
+		kvs := make([]kv, 0, len(vv))
+
+		for k, v := range vv {
+			vs, err := json.Marshal(v)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
+			}
+
+			if vs[0] == '"' {
+				vs = bytes.Trim(vs, `"`)
+			}
+
+			kvs = append(kvs, kv{k: k, v: string(vs)})
+		}
+
+		sort.Slice(kvs, func(i, j int) bool {
+			return len(kvs[i].k) > len(kvs[j].k)
+		})
+
+		for _, kv := range kvs {
+			s = strings.ReplaceAll(s, kv.k, kv.v)
+		}
+	}
+
+	return s, nil
 }
