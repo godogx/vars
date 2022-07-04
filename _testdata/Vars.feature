@@ -24,6 +24,7 @@ Feature: Variables
       | $baz  | {"one":1,"two":2} |
       | $qux  | 123               |
       | $quux | true              |
+    And variable $qux equals to 123
 
 
     # Use vars in custom steps.

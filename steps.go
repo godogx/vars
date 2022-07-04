@@ -117,7 +117,7 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 			return ctx, fmt.Errorf("failed to decode variable %s with value %s as JSON: %w", name, value, err)
 		}
 
-		v.Set(s.varPrefix+name, val)
+		v.Set(name, val)
 	}
 
 	return ctx, nil
@@ -134,7 +134,7 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
-		stored, found := v.Get(s.varPrefix + name)
+		stored, found := v.Get(name)
 		if !found {
 			return fmt.Errorf("could not find variable %s", name)
 		}
