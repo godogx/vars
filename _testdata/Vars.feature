@@ -13,18 +13,25 @@ Feature: Variables
     # Set values to multiple variables.
     # Values are decoded into `any` with JSON decoder.
     # Beware that both integers and floats will be decoded as `float64`.
+    # String values can interpolate other variables (see $replaced).
     When variables are set to values
-      | $bar  | "abc"             |
-      | $baz  | {"one":1,"two":2} |
-      | $qux  | 123               |
-      | $quux | true              |
+      | $bar      | "abc"             |
+      | $baz      | {"one":1,"two":2} |
+      | $qux      | 123               |
+      | $quux     | true              |
+      | $replaced | "$qux/test/$bar"  |
     # Assert current values of multiple variables.
+    # String values can interpolate other variables (see $replaced: "$qux/test/$bar").
     Then variables are equal to values
-      | $bar  | "abc"             |
-      | $baz  | {"one":1,"two":2} |
-      | $qux  | 123               |
-      | $quux | true              |
+      | $bar      | "abc"             |
+      | $baz      | {"one":1,"two":2} |
+      | $qux      | 123               |
+      | $quux     | true              |
+      | $replaced | "123/test/abc"    |
+      | $replaced | "$qux/test/$bar"  |
     And variable $qux equals to 123
+    And variable $replaced equals to "$qux/test/$bar"
+    And variable $replaced equals to "123/test/abc"
 
 
     # Use vars in custom steps.
