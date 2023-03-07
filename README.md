@@ -16,6 +16,10 @@ Register steps to `godog` scenario context.
 
 ```go
 vs := vars.Steps{}
+// You can add value generators that would be available with 'gen:' prefix, e.g. gen:new-id or gen:uuid.
+vs.AddGenerator("new-id", func() (interface{}, error) {
+    return 1337, nil
+})
 
 suite := godog.TestSuite{}
 suite.ScenarioInitializer = func(s *godog.ScenarioContext) {
@@ -40,25 +44,32 @@ Feature: Variables
     # Assert current value of variable.
     Then variable $foo equals to "abcdef"
 
+    # Variable can be set with user-defined generator.
+    When variable $foo is set to gen:new-id
+
+    Then variable $foo equals to 1337
+    
     # Set values to multiple variables.
     # Values are decoded into `any` with JSON decoder.
     # Beware that both integers and floats will be decoded as `float64`.
     # String values can interpolate other variables (see $replaced).
     When variables are set to values
-      | $bar      | "abc"             |
-      | $baz      | {"one":1,"two":2} |
-      | $qux      | 123               |
-      | $quux     | true              |
-      | $replaced | "$qux/test/$bar"  |
+      | $bar       | "abc"             |
+      | $baz       | {"one":1,"two":2} |
+      | $qux       | 123               |
+      | $quux      | true              |
+      | $replaced  | "$qux/test/$bar"  |
+      | $generated | gen:new-id        |
     # Assert current values of multiple variables.
     # String values can interpolate other variables (see $replaced: "$qux/test/$bar").
     Then variables are equal to values
-      | $bar      | "abc"             |
-      | $baz      | {"one":1,"two":2} |
-      | $qux      | 123               |
-      | $quux     | true              |
-      | $replaced | "123/test/abc"    |
-      | $replaced | "$qux/test/$bar"  |
+      | $bar       | "abc"             |
+      | $baz       | {"one":1,"two":2} |
+      | $qux       | 123               |
+      | $quux      | true              |
+      | $replaced  | "123/test/abc"    |
+      | $replaced  | "$qux/test/$bar"  |
+      | $generated | 1337              |
     And variable $qux equals to 123
     And variable $replaced equals to "$qux/test/$bar"
     And variable $replaced equals to "123/test/abc"
