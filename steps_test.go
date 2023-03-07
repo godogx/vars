@@ -12,6 +12,9 @@ import (
 
 func TestFeatures(t *testing.T) {
 	vs := vars.Steps{}
+	vs.AddGenerator("new-id", func() (interface{}, error) {
+		return 1337, nil
+	})
 
 	suite := godog.TestSuite{}
 	suite.ScenarioInitializer = func(s *godog.ScenarioContext) {

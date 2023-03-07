@@ -27,7 +27,17 @@ func FromContext(ctx context.Context) map[string]interface{} {
 type Steps struct {
 	JSONComparer assertjson.Comparer
 
-	varPrefix string
+	varPrefix  string
+	generators map[string]func() (interface{}, error)
+}
+
+// AddGenerator registers user-defined generator function, suitable for random identifiers.
+func (s *Steps) AddGenerator(name string, f func() (interface{}, error)) {
+	if s.generators == nil {
+		s.generators = make(map[string]func() (interface{}, error))
+	}
+
+	s.generators[name] = f
 }
 
 // Register add steps to scenario context.
@@ -47,10 +57,11 @@ func (s *Steps) Register(sc *godog.ScenarioContext) {
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) equals to (.+)$`, s.varEquals)
 
 	//    When variables are set to values
-	//      | $bar  | "abc"             |
-	//      | $baz  | {"one":1,"two":2} |
-	//      | $qux  | 123               |
-	//      | $quux | true              |
+	//      | $bar   | "abc"             |
+	//      | $baz   | {"one":1,"two":2} |
+	//      | $qux   | 123               |
+	//      | $quux  | true              |
+	//      | $corge | gen:alphanum-7    |
 	sc.Step(`^variables are set to values$`, s.varsAreSet)
 
 	//    Then variables are equal to values
@@ -82,12 +93,18 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 
 	rv, err := replaceString(value, v)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to replace vars in %s: %w", value, err)
+		return ctx, fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
 
-	var val interface{}
-	if err := json.Unmarshal([]byte(rv), &val); err != nil {
-		return ctx, fmt.Errorf("failed to decode variable %s with value %s as JSON: %w", name, value, err)
+	val, gen, err := s.gen(value)
+	if err != nil {
+		return ctx, err
+	}
+
+	if !gen {
+		if err := json.Unmarshal([]byte(rv), &val); err != nil {
+			return ctx, fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
+		}
 	}
 
 	v.Set(s.varPrefix+name, val)
@@ -95,12 +112,32 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 	return ctx, nil
 }
 
+func (s *Steps) gen(value string) (interface{}, bool, error) {
+	if !strings.HasPrefix(value, "gen:") {
+		return nil, false, nil
+	}
+
+	gen := value[4:]
+
+	f, ok := s.generators[gen]
+	if !ok {
+		return nil, true, fmt.Errorf("missing generator %q", gen)
+	}
+
+	val, err := f()
+	if err != nil {
+		return nil, true, fmt.Errorf("generating value with %q: %w", gen, err)
+	}
+
+	return val, true, nil
+}
+
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 	_, v := s.JSONComparer.Vars.Fork(ctx)
 
 	rv, err := replaceString(value, v)
 	if err != nil {
-		return fmt.Errorf("failed to replace vars in %s: %w", value, err)
+		return fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
 
 	stored, found := v.Get(s.varPrefix + name)
@@ -128,12 +165,18 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 
 		value, err := replaceString(value, v)
 		if err != nil {
-			return ctx, fmt.Errorf("failed to replace vars in %s: %w", row.Cells[1].Value, err)
+			return ctx, fmt.Errorf("replacing vars in %s: %w", row.Cells[1].Value, err)
 		}
 
-		var val interface{}
-		if err := json.Unmarshal([]byte(value), &val); err != nil {
-			return ctx, fmt.Errorf("failed to decode variable %s with value %s as JSON: %w", name, value, err)
+		val, gen, err := s.gen(value)
+		if err != nil {
+			return ctx, err
+		}
+
+		if !gen {
+			if err := json.Unmarshal([]byte(value), &val); err != nil {
+				return ctx, fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
+			}
 		}
 
 		v.Set(name, val)
