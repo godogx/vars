@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/swaggest/assertjson/json5"
 	"sort"
 	"strings"
 
@@ -29,6 +30,59 @@ type Steps struct {
 
 	varPrefix  string
 	generators map[string]func() (interface{}, error)
+}
+
+// LoadBody loads body from bytes and replaces vars in it.
+func (s *Steps) LoadBody(ctx context.Context, body []byte) ([]byte, context.Context, error) {
+	var (
+		err error
+		vv  *shared.Vars
+	)
+
+	if json5.Valid(body) {
+		if body, err = json5.Downgrade(body); err != nil {
+			return nil, ctx, fmt.Errorf("failed to downgrade JSON5 to JSON: %w", err)
+		}
+	}
+
+	if s.JSONComparer.Vars != nil {
+		ctx, vv = s.JSONComparer.Vars.Fork(ctx)
+	}
+
+	if vv != nil {
+		varMap := vv.GetAll()
+		varNames := make([]string, 0, len(varMap))
+		varJV := make(map[string][]byte)
+
+		for k, v := range vv.GetAll() {
+			varNames = append(varNames, k)
+
+			jv, err := json.Marshal(v)
+			if err != nil {
+				return nil, ctx, fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
+			}
+
+			varJV[k] = jv
+
+			body = bytes.ReplaceAll(body, []byte(`"`+k+`"`), jv)
+		}
+
+		sort.Slice(varNames, func(i, j int) bool {
+			return len(varNames[i]) > len(varNames[j])
+		})
+
+		for _, k := range varNames {
+			jv := varJV[k]
+
+			if jv[0] == '"' && jv[len(jv)-1] == '"' {
+				jv = jv[1 : len(jv)-1]
+			}
+
+			body = bytes.ReplaceAll(body, []byte(k), jv)
+		}
+	}
+
+	return body, ctx, nil
 }
 
 // AddGenerator registers user-defined generator function, suitable for random identifiers.
