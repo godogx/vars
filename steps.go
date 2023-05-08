@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/swaggest/assertjson/json5"
+	"io/ioutil"
 	"sort"
 	"strings"
 
 	"github.com/bool64/shared"
 	"github.com/cucumber/godog"
 	"github.com/swaggest/assertjson"
+	"github.com/swaggest/assertjson/json5"
 )
 
 // ToContext adds variable to context.
@@ -24,6 +25,13 @@ func FromContext(ctx context.Context) map[string]interface{} {
 	return shared.VarsFromContext(ctx)
 }
 
+// Fork instruments context with a storage of variables.
+func Fork(ctx context.Context) (context.Context, *shared.Vars) {
+	var v shared.Vars
+
+	return v.Fork(ctx)
+}
+
 // Steps provides godog gherkin step definitions.
 type Steps struct {
 	JSONComparer assertjson.Comparer
@@ -32,8 +40,20 @@ type Steps struct {
 	generators map[string]func() (interface{}, error)
 }
 
-// LoadBody loads body from bytes and replaces vars in it.
-func (s *Steps) LoadBody(ctx context.Context, body []byte) ([]byte, context.Context, error) {
+// ReplaceBytesFromFile replaces vars in file contents.
+func (s *Steps) ReplaceBytesFromFile(ctx context.Context, filePath string) (context.Context, []byte, error) {
+	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	return s.ReplaceBytes(ctx, body)
+}
+
+// ReplaceBytes replaces vars in bytes.
+//
+// This function can help to interpolate variables into predefined templates.
+func (s *Steps) ReplaceBytes(ctx context.Context, body []byte) (context.Context, []byte, error) {
 	var (
 		err error
 		vv  *shared.Vars
@@ -41,13 +61,11 @@ func (s *Steps) LoadBody(ctx context.Context, body []byte) ([]byte, context.Cont
 
 	if json5.Valid(body) {
 		if body, err = json5.Downgrade(body); err != nil {
-			return nil, ctx, fmt.Errorf("failed to downgrade JSON5 to JSON: %w", err)
+			return ctx, nil, fmt.Errorf("failed to downgrade JSON5 to JSON: %w", err)
 		}
 	}
 
-	if s.JSONComparer.Vars != nil {
-		ctx, vv = s.JSONComparer.Vars.Fork(ctx)
-	}
+	ctx, vv = s.JSONComparer.Vars.Fork(ctx)
 
 	if vv != nil {
 		varMap := vv.GetAll()
@@ -59,7 +77,7 @@ func (s *Steps) LoadBody(ctx context.Context, body []byte) ([]byte, context.Cont
 
 			jv, err := json.Marshal(v)
 			if err != nil {
-				return nil, ctx, fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
+				return ctx, nil, fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
 			}
 
 			varJV[k] = jv
@@ -82,7 +100,7 @@ func (s *Steps) LoadBody(ctx context.Context, body []byte) ([]byte, context.Cont
 		}
 	}
 
-	return body, ctx, nil
+	return ctx, body, nil
 }
 
 // AddGenerator registers user-defined generator function, suitable for random identifiers.
@@ -145,7 +163,7 @@ func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
 func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Context, error) {
 	ctx, v := s.JSONComparer.Vars.Fork(ctx)
 
-	rv, err := replaceString(value, v)
+	ctx, rv, err := s.ReplaceBytes(ctx, []byte(value))
 	if err != nil {
 		return ctx, fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
@@ -156,7 +174,7 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 	}
 
 	if !gen {
-		if err := json.Unmarshal([]byte(rv), &val); err != nil {
+		if err := json.Unmarshal(rv, &val); err != nil {
 			return ctx, fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
 		}
 	}
@@ -189,7 +207,7 @@ func (s *Steps) gen(value string) (interface{}, bool, error) {
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 	_, v := s.JSONComparer.Vars.Fork(ctx)
 
-	rv, err := replaceString(value, v)
+	_, rv, err := s.ReplaceBytes(ctx, []byte(value))
 	if err != nil {
 		return fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
@@ -199,7 +217,7 @@ func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 		return fmt.Errorf("could not find variable %s", name)
 	}
 
-	if err := assertjson.FailNotEqualMarshal([]byte(rv), stored); err != nil {
+	if err := assertjson.FailNotEqualMarshal(rv, stored); err != nil {
 		return fmt.Errorf("variable %s assertion failed: %w", name, err)
 	}
 
@@ -217,18 +235,18 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
-		value, err := replaceString(value, v)
+		_, rv, err := s.ReplaceBytes(ctx, []byte(value))
 		if err != nil {
 			return ctx, fmt.Errorf("replacing vars in %s: %w", row.Cells[1].Value, err)
 		}
 
-		val, gen, err := s.gen(value)
+		val, gen, err := s.gen(string(rv))
 		if err != nil {
 			return ctx, err
 		}
 
 		if !gen {
-			if err := json.Unmarshal([]byte(value), &val); err != nil {
+			if err := json.Unmarshal(rv, &val); err != nil {
 				return ctx, fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
 			}
 		}
@@ -250,7 +268,7 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
-		value, err := replaceString(value, v)
+		_, rv, err := s.ReplaceBytes(ctx, []byte(value))
 		if err != nil {
 			return fmt.Errorf("failed to replace vars in %s: %w", row.Cells[1].Value, err)
 		}
@@ -260,45 +278,10 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 			return fmt.Errorf("could not find variable %s", name)
 		}
 
-		if err := assertjson.FailNotEqualMarshal([]byte(value), stored); err != nil {
+		if err := assertjson.FailNotEqualMarshal(rv, stored); err != nil {
 			return fmt.Errorf("variable %s assertion failed: %w", name, err)
 		}
 	}
 
 	return nil
-}
-
-func replaceString(s string, vars *shared.Vars) (string, error) {
-	if vars != nil {
-		type kv struct {
-			k string
-			v string
-		}
-
-		vv := vars.GetAll()
-		kvs := make([]kv, 0, len(vv))
-
-		for k, v := range vv {
-			vs, err := json.Marshal(v)
-			if err != nil {
-				return "", fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
-			}
-
-			if vs[0] == '"' {
-				vs = bytes.Trim(vs, `"`)
-			}
-
-			kvs = append(kvs, kv{k: k, v: string(vs)})
-		}
-
-		sort.Slice(kvs, func(i, j int) bool {
-			return len(kvs[i].k) > len(kvs[j].k)
-		})
-
-		for _, kv := range kvs {
-			s = strings.ReplaceAll(s, kv.k, kv.v)
-		}
-	}
-
-	return s, nil
 }
