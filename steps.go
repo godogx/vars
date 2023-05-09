@@ -65,7 +65,11 @@ func (s *Steps) ReplaceBytes(ctx context.Context, body []byte) (context.Context,
 		}
 	}
 
-	ctx, vv = s.JSONComparer.Vars.Fork(ctx)
+	if s != nil {
+		ctx, vv = s.JSONComparer.Vars.Fork(ctx)
+	} else {
+		ctx, vv = Fork(ctx)
+	}
 
 	if vv != nil {
 		varMap := vv.GetAll()
@@ -101,6 +105,37 @@ func (s *Steps) ReplaceBytes(ctx context.Context, body []byte) (context.Context,
 	}
 
 	return ctx, body, nil
+}
+
+// AssertBytes compares payloads and collects variables from JSON fields.
+func (s *Steps) AssertBytes(ctx context.Context, expected, received []byte) (context.Context, error) {
+	var jc assertjson.Comparer
+
+	if s != nil {
+		jc = s.JSONComparer
+	} else {
+		jc = assertjson.Comparer{
+			IgnoreDiff: assertjson.IgnoreDiff,
+		}
+	}
+
+	ctx, jc.Vars = jc.Vars.Fork(ctx)
+
+	if (expected == nil || json5.Valid(expected)) && json5.Valid(received) {
+		expected, err := json5.Downgrade(expected)
+		if err != nil {
+			return ctx, err
+		}
+
+		return ctx, jc.FailNotEqual(expected, received)
+	}
+
+	if !bytes.Equal(expected, received) {
+		return ctx, fmt.Errorf("expected: %q, received: %q",
+			string(expected), string(received))
+	}
+
+	return ctx, nil
 }
 
 // AddGenerator registers user-defined generator function, suitable for random identifiers.
