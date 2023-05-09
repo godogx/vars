@@ -168,7 +168,7 @@ func (s *Steps) Assert(ctx context.Context, expected, received []byte, ignoreAdd
 func (s *Steps) AssertJSONPaths(ctx context.Context, jsonPaths *godog.Table, received []byte, ignoreAddedJSONFields bool) (context.Context, error) {
 	var rcv interface{}
 	if err := json.Unmarshal(received, &rcv); err != nil {
-		return ctx, fmt.Errorf("failed to unmarshal response body: %w", err)
+		return ctx, fmt.Errorf("failed to unmarshal received value: %w", err)
 	}
 
 	ctx, jc := s.jc(ctx)
@@ -187,6 +187,11 @@ func (s *Steps) AssertJSONPaths(ctx context.Context, jsonPaths *godog.Table, rec
 		}
 
 		expected := []byte(row.Cells[1].Value)
+
+		ctx, expected, err = s.Replace(ctx, expected)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to prepare expected value at jsonpath %s: %w", path, err)
+		}
 
 		if ignoreAddedJSONFields {
 			err = jc.FailMismatch(expected, actual)
@@ -224,6 +229,12 @@ func (s *Steps) Register(sc *godog.ScenarioContext) {
 	// When variable $foo is set to "abcdef"
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) is set to (.+)$`, s.varIsSet)
 
+	// When variable $foo is set to
+	// """json5
+	// {"foo":"bar"}
+	// """
+	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) is set to$`, s.varIsSet)
+
 	// Then variable $foo equals to "abcdef"
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) equals to (.+)$`, s.varEquals)
 
@@ -241,6 +252,14 @@ func (s *Steps) Register(sc *godog.ScenarioContext) {
 	//      | $qux  | 123               |
 	//      | $quux | true              |
 	sc.Step(`^variables are equal to values$`, s.varsAreEqual)
+
+	//    Then variable $bar matches JSON paths
+	//      | $.foo          | "abcdef"   |
+	//      | $.bar          | 123        |
+	//      | $.baz          | true       |
+	//      | $.prefixed_foo | "ooo::$foo" |
+	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) matches JSON paths$`, s.varMatchesJSONPaths)
+
 }
 
 func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
@@ -304,7 +323,7 @@ func (s *Steps) gen(value string) (interface{}, bool, error) {
 }
 
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
-	_, v := s.JSONComparer.Vars.Fork(ctx)
+	_, v := s.Vars(ctx)
 
 	_, rv, err := s.Replace(ctx, []byte(value))
 	if err != nil {
@@ -324,7 +343,7 @@ func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 }
 
 func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Context, error) {
-	ctx, v := s.JSONComparer.Vars.Fork(ctx)
+	ctx, v := s.Vars(ctx)
 
 	for _, row := range table.Rows {
 		if len(row.Cells) != 2 {
@@ -357,7 +376,7 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 }
 
 func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
-	_, v := s.JSONComparer.Vars.Fork(ctx)
+	_, v := s.Vars(ctx)
 
 	for _, row := range table.Rows {
 		if len(row.Cells) != 2 {
@@ -383,4 +402,20 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 	}
 
 	return nil
+}
+
+func (s *Steps) varMatchesJSONPaths(ctx context.Context, name string, jsonPaths *godog.Table) (context.Context, error) {
+	ctx, v := s.Vars(ctx)
+
+	stored, found := v.Get(s.varPrefix + name)
+	if !found {
+		return ctx, fmt.Errorf("could not find variable %s", name)
+	}
+
+	j, err := json.Marshal(stored)
+	if err != nil {
+		return ctx, fmt.Errorf("failed to marshal variable %s: %w", name, err)
+	}
+
+	return s.AssertJSONPaths(ctx, jsonPaths, j, true)
 }

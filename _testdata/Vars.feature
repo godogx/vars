@@ -41,6 +41,28 @@ Feature: Variables
     And variable $replaced equals to "$qux/test/$bar"
     And variable $replaced equals to "123/test/abc"
 
+    When variable $bar is set to
+    """json5
+    // A JSON5 comment.
+    {
+      "foo":"$foo",
+      "bar":12345,
+      "baz":true,
+      "prefixed_foo":"ooo::$foo"
+    }
+    """
+
+    # Assert parts of variable value using JSON path.
+    # This step can also be used to assign resolved JSON path to a new variable, see $collected.
+    Then variable $bar matches JSON paths
+      | $.foo          | 1337         |
+      | $.bar          | 12345        |
+      | $.bar          | "$collected" |
+      | $.baz          | true         |
+      | $.prefixed_foo | "ooo::$foo"  |
+      | $.prefixed_foo | "ooo::1337"  |
+
+    And variable $collected equals to 12345
 
     # Use vars in custom steps.
     When I do foo
