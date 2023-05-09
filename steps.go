@@ -259,7 +259,6 @@ func (s *Steps) Register(sc *godog.ScenarioContext) {
 	//      | $.baz          | true       |
 	//      | $.prefixed_foo | "ooo::$foo" |
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) matches JSON paths$`, s.varMatchesJSONPaths)
-
 }
 
 func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
