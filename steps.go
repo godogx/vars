@@ -13,6 +13,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/swaggest/assertjson"
 	"github.com/swaggest/assertjson/json5"
+	"github.com/yalp/jsonpath"
 )
 
 // ToContext adds variable to context.
@@ -25,8 +26,8 @@ func FromContext(ctx context.Context) map[string]interface{} {
 	return shared.VarsFromContext(ctx)
 }
 
-// Fork instruments context with a storage of variables.
-func Fork(ctx context.Context) (context.Context, *shared.Vars) {
+// Vars instruments context with a storage of variables.
+func Vars(ctx context.Context) (context.Context, *shared.Vars) {
 	var v shared.Vars
 
 	return v.Fork(ctx)
@@ -40,75 +41,16 @@ type Steps struct {
 	generators map[string]func() (interface{}, error)
 }
 
-// ReplaceBytesFromFile replaces vars in file contents.
-func (s *Steps) ReplaceBytesFromFile(ctx context.Context, filePath string) (context.Context, []byte, error) {
-	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
-	if err != nil {
-		return ctx, nil, err
-	}
-
-	return s.ReplaceBytes(ctx, body)
-}
-
-// ReplaceBytes replaces vars in bytes.
-//
-// This function can help to interpolate variables into predefined templates.
-func (s *Steps) ReplaceBytes(ctx context.Context, body []byte) (context.Context, []byte, error) {
-	var (
-		err error
-		vv  *shared.Vars
-	)
-
-	if json5.Valid(body) {
-		if body, err = json5.Downgrade(body); err != nil {
-			return ctx, nil, fmt.Errorf("failed to downgrade JSON5 to JSON: %w", err)
-		}
-	}
-
+// Vars instruments context with a storage of variables.
+func (s *Steps) Vars(ctx context.Context) (context.Context, *shared.Vars) {
 	if s != nil {
-		ctx, vv = s.JSONComparer.Vars.Fork(ctx)
-	} else {
-		ctx, vv = Fork(ctx)
+		return s.JSONComparer.Vars.Fork(ctx)
 	}
 
-	if vv != nil {
-		varMap := vv.GetAll()
-		varNames := make([]string, 0, len(varMap))
-		varJV := make(map[string][]byte)
-
-		for k, v := range vv.GetAll() {
-			varNames = append(varNames, k)
-
-			jv, err := json.Marshal(v)
-			if err != nil {
-				return ctx, nil, fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
-			}
-
-			varJV[k] = jv
-
-			body = bytes.ReplaceAll(body, []byte(`"`+k+`"`), jv)
-		}
-
-		sort.Slice(varNames, func(i, j int) bool {
-			return len(varNames[i]) > len(varNames[j])
-		})
-
-		for _, k := range varNames {
-			jv := varJV[k]
-
-			if jv[0] == '"' && jv[len(jv)-1] == '"' {
-				jv = jv[1 : len(jv)-1]
-			}
-
-			body = bytes.ReplaceAll(body, []byte(k), jv)
-		}
-	}
-
-	return ctx, body, nil
+	return Vars(ctx)
 }
 
-// AssertBytes compares payloads and collects variables from JSON fields.
-func (s *Steps) AssertBytes(ctx context.Context, expected, received []byte) (context.Context, error) {
+func (s *Steps) jc(ctx context.Context) (context.Context, assertjson.Comparer) {
 	var jc assertjson.Comparer
 
 	if s != nil {
@@ -121,10 +63,94 @@ func (s *Steps) AssertBytes(ctx context.Context, expected, received []byte) (con
 
 	ctx, jc.Vars = jc.Vars.Fork(ctx)
 
+	return ctx, jc
+}
+
+// ReplaceFile replaces vars in file contents.
+func (s *Steps) ReplaceFile(ctx context.Context, filePath string) (context.Context, []byte, error) {
+	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
+	if err != nil {
+		return ctx, nil, err
+	}
+
+	return s.Replace(ctx, body)
+}
+
+// Replace replaces vars in bytes slice.
+//
+// This function can help to interpolate variables into predefined templates.
+func (s *Steps) Replace(ctx context.Context, body []byte) (context.Context, []byte, error) {
+	var err error
+
+	if json5.Valid(body) {
+		if body, err = json5.Downgrade(body); err != nil {
+			return ctx, nil, fmt.Errorf("failed to downgrade JSON5 to JSON: %w", err)
+		}
+	}
+
+	ctx, jc := s.jc(ctx)
+
+	varMap := jc.Vars.GetAll()
+	varNames := make([]string, 0, len(varMap))
+	varJV := make(map[string][]byte)
+
+	for k, v := range jc.Vars.GetAll() {
+		varNames = append(varNames, k)
+
+		jv, err := json.Marshal(v)
+		if err != nil {
+			return ctx, nil, fmt.Errorf("failed to marshal var %s (%v): %w", k, v, err)
+		}
+
+		varJV[k] = jv
+
+		body = bytes.ReplaceAll(body, []byte(`"`+k+`"`), jv)
+	}
+
+	sort.Slice(varNames, func(i, j int) bool {
+		return len(varNames[i]) > len(varNames[j])
+	})
+
+	for _, k := range varNames {
+		jv := varJV[k]
+
+		if jv[0] == '"' && jv[len(jv)-1] == '"' {
+			jv = jv[1 : len(jv)-1]
+		}
+
+		body = bytes.ReplaceAll(body, []byte(k), jv)
+	}
+
+	return ctx, body, nil
+}
+
+// AssertFile compares payloads and collects variables from JSON fields.
+func (s *Steps) AssertFile(ctx context.Context, filePath string, received []byte, ignoreAddedJSONFields bool) (context.Context, error) {
+	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
+	if err != nil {
+		return ctx, err
+	}
+
+	return s.Assert(ctx, body, received, ignoreAddedJSONFields)
+}
+
+// Assert compares payloads and collects variables from JSON fields.
+func (s *Steps) Assert(ctx context.Context, expected, received []byte, ignoreAddedJSONFields bool) (context.Context, error) {
+	ctx, jc := s.jc(ctx)
+
+	ctx, expected, err := s.Replace(ctx, expected)
+	if err != nil {
+		return ctx, err
+	}
+
 	if (expected == nil || json5.Valid(expected)) && json5.Valid(received) {
 		expected, err := json5.Downgrade(expected)
 		if err != nil {
 			return ctx, err
+		}
+
+		if ignoreAddedJSONFields {
+			return ctx, jc.FailMismatch(expected, received)
 		}
 
 		return ctx, jc.FailNotEqual(expected, received)
@@ -133,6 +159,44 @@ func (s *Steps) AssertBytes(ctx context.Context, expected, received []byte) (con
 	if !bytes.Equal(expected, received) {
 		return ctx, fmt.Errorf("expected: %q, received: %q",
 			string(expected), string(received))
+	}
+
+	return ctx, nil
+}
+
+// AssertJSONPaths compares payload with a list of JSON path expectations.
+func (s *Steps) AssertJSONPaths(ctx context.Context, jsonPaths *godog.Table, received []byte, ignoreAddedJSONFields bool) (context.Context, error) {
+	var rcv interface{}
+	if err := json.Unmarshal(received, &rcv); err != nil {
+		return ctx, fmt.Errorf("failed to unmarshal response body: %w", err)
+	}
+
+	ctx, jc := s.jc(ctx)
+
+	for _, row := range jsonPaths.Rows {
+		path := row.Cells[0].Value
+
+		v, err := jsonpath.Read(rcv, path)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to read jsonpath %s: %w", path, err)
+		}
+
+		actual, err := json.Marshal(v)
+		if err != nil {
+			return ctx, fmt.Errorf("failed to marshal actual value at jsonpath %s: %w", path, err)
+		}
+
+		expected := []byte(row.Cells[1].Value)
+
+		if ignoreAddedJSONFields {
+			err = jc.FailMismatch(expected, actual)
+		} else {
+			err = jc.FailNotEqual(expected, actual)
+		}
+
+		if err != nil {
+			return ctx, fmt.Errorf("failed to assert jsonpath %s: %w", path, err)
+		}
 	}
 
 	return ctx, nil
@@ -198,7 +262,7 @@ func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
 func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Context, error) {
 	ctx, v := s.JSONComparer.Vars.Fork(ctx)
 
-	ctx, rv, err := s.ReplaceBytes(ctx, []byte(value))
+	ctx, rv, err := s.Replace(ctx, []byte(value))
 	if err != nil {
 		return ctx, fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
@@ -242,7 +306,7 @@ func (s *Steps) gen(value string) (interface{}, bool, error) {
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
 	_, v := s.JSONComparer.Vars.Fork(ctx)
 
-	_, rv, err := s.ReplaceBytes(ctx, []byte(value))
+	_, rv, err := s.Replace(ctx, []byte(value))
 	if err != nil {
 		return fmt.Errorf("replacing vars in %s: %w", value, err)
 	}
@@ -270,7 +334,7 @@ func (s *Steps) varsAreSet(ctx context.Context, table *godog.Table) (context.Con
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
-		_, rv, err := s.ReplaceBytes(ctx, []byte(value))
+		_, rv, err := s.Replace(ctx, []byte(value))
 		if err != nil {
 			return ctx, fmt.Errorf("replacing vars in %s: %w", row.Cells[1].Value, err)
 		}
@@ -303,7 +367,7 @@ func (s *Steps) varsAreEqual(ctx context.Context, table *godog.Table) error {
 		name := row.Cells[0].Value
 		value := row.Cells[1].Value
 
-		_, rv, err := s.ReplaceBytes(ctx, []byte(value))
+		_, rv, err := s.Replace(ctx, []byte(value))
 		if err != nil {
 			return fmt.Errorf("failed to replace vars in %s: %w", row.Cells[1].Value, err)
 		}

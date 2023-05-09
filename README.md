@@ -102,3 +102,12 @@ s.Step("^foo is done$", func(ctx context.Context) error {
     When I do foo
     Then foo is done
 ```
+
+### Custom Steps
+
+You can enable variables in your own step definitions with these contextualized helpers
+* `Replace` applies known vars to a byte slice,
+* `ReplaceFile` is same as `Replace`, but reads byte slice from a file,
+* `Assert` compares two byte slices, collects unknown vars, checks known vars,
+* `AssertFile` is same as `Assert`, but reads expected byte slice from a file,
+* `AssertJSONPaths` checks JSON byte slice against a `godog.Table` with expected values at JSON Paths. 
