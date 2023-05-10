@@ -7,10 +7,7 @@ import (
 	"github.com/godogx/vars"
 )
 
-func ExampleSteps_Assert() {
-	// Zero value works in default mode.
-	var s *vars.Steps
-
+func ExampleAssert() {
 	// Variables are passed via chained context.
 	ctx := context.Background()
 
@@ -18,7 +15,7 @@ func ExampleSteps_Assert() {
 	received := []byte(`{"foo":321,"bar":123,"baz":true}`)
 
 	// No error, $foo is populated with 321, "baz" is ignored for true `ignoreAddedJSONFields` argument.
-	ctx, err := s.Assert(ctx, expected, received, true)
+	ctx, err := vars.Assert(ctx, expected, received, true)
 	if err != nil {
 		fmt.Println("assertion failed: " + err.Error())
 	}
@@ -26,7 +23,7 @@ func ExampleSteps_Assert() {
 	expected = []byte(`{"foo":"$foo","bar":123,"prefixed_foo":"ooo::$foo"}`)
 	received = []byte(`{"foo":313,"bar":123,"baz":true,"prefixed_foo":"ooo::321"}`)
 	// Assertion fails.
-	_, err = s.Assert(ctx, expected, received, false)
+	_, err = vars.Assert(ctx, expected, received, false)
 	if err != nil {
 		fmt.Println("assertion failed: " + err.Error())
 	}
@@ -40,4 +37,23 @@ func ExampleSteps_Assert() {
 	//    "prefixed_foo": "ooo::321"
 	// +  "baz": true
 	//  }
+}
+
+func ExampleReplace() {
+	// Variables are passed via chained context.
+	ctx := context.Background()
+
+	ctx = vars.ToContext(ctx, "$foo", 321)
+
+	expected := []byte(`{"foo":"$foo","bar":123, "prefixed_foo":"ooo::$foo"}`)
+
+	_, expected, err := vars.Replace(ctx, expected)
+	if err != nil {
+		fmt.Println("replace failed: " + err.Error())
+	}
+
+	fmt.Println(string(expected))
+
+	// Output:
+	// {"foo":321,"bar":123,"prefixed_foo":"ooo::321"}
 }
