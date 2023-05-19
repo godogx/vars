@@ -3,6 +3,7 @@ package vars_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cucumber/godog"
@@ -43,6 +44,44 @@ func TestFeatures(t *testing.T) {
 		Strict:   true,
 		Paths:    []string{"_testdata/Vars.feature"},
 		TestingT: t,
+	}
+
+	assert.Zero(t, suite.Run(), "suite failed")
+}
+
+func TestFeatures_global(t *testing.T) {
+	var (
+		featureSeq int64
+		globalSeq  int64
+	)
+
+	vs := vars.Steps{}
+
+	vs.AddGenerator("featureSeq", func() (interface{}, error) {
+		v := atomic.AddInt64(&featureSeq, 1)
+		assert.Less(t, v, int64(5))
+
+		return v, nil
+	})
+
+	vs.AddGenerator("globalSeq", func() (interface{}, error) {
+		v := atomic.AddInt64(&globalSeq, 1)
+		assert.Less(t, v, int64(3))
+
+		return v, nil
+	})
+
+	suite := godog.TestSuite{}
+	suite.ScenarioInitializer = func(s *godog.ScenarioContext) {
+		vs.Register(s)
+	}
+
+	suite.Options = &godog.Options{
+		Format:      "pretty",
+		Strict:      true,
+		Paths:       []string{"_testdata/Feature1.feature", "_testdata/Feature2.feature"},
+		Concurrency: 10,
+		TestingT:    t,
 	}
 
 	assert.Zero(t, suite.Run(), "suite failed")

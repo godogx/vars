@@ -134,4 +134,20 @@ You can enable variables in your own step definitions with these contextualized 
 * `ReplaceFile` is same as `Replace`, but reads byte slice from a file,
 * `Assert` compares two byte slices, collects unknown vars, checks known vars,
 * `AssertFile` is same as `Assert`, but reads expected byte slice from a file,
-* `AssertJSONPaths` checks JSON byte slice against a `godog.Table` with expected values at JSON Paths. 
+* `AssertJSONPaths` checks JSON byte slice against a `godog.Table` with expected values at JSON Paths.
+
+### Setting variable once for multiple scenarios and/or features
+
+In some cases you may want to set a variable only once in the feature or globally (in all features).
+
+This is handy if you 
+
+```gherkin
+    Given variables are set to values once in this feature
+      | $fv1 | gen:featureSeq |
+      | $fv2 | gen:featureSeq |
+
+    And variables are set to values once globally
+      | $gv1 | gen:globalSeq |
+      | $gv2 | gen:globalSeq |
+```
