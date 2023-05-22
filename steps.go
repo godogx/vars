@@ -3,13 +3,18 @@ package vars
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/cucumber/godog"
 	"github.com/swaggest/assertjson"
 )
+
+// Factory is a function to create variable value.
+type Factory func(ctx context.Context, args ...interface{}) (context.Context, interface{}, error)
 
 // Steps provides godog gherkin step definitions.
 type Steps struct {
@@ -18,6 +23,7 @@ type Steps struct {
 	mu         sync.Mutex
 	varPrefix  string
 	generators map[string]func() (interface{}, error)
+	factories  map[string]Factory
 
 	globalVars  map[string]interface{}
 	featureVars map[string]map[string]interface{}
@@ -33,6 +39,18 @@ func (s *Steps) AddGenerator(name string, f func() (interface{}, error)) {
 	}
 
 	s.generators[name] = f
+}
+
+// AddFactory registers user-defined factory function, suitable for resource creation.
+func (s *Steps) AddFactory(name string, f Factory) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.factories == nil {
+		s.factories = make(map[string]Factory)
+	}
+
+	s.factories[name] = f
 }
 
 type fvCtxKey struct{}
@@ -153,20 +171,9 @@ func (s *Steps) varIsUndefined(ctx context.Context, name string) error {
 func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Context, error) {
 	ctx, v := s.JSONComparer.Vars.Fork(ctx)
 
-	ctx, rv, err := s.Replace(ctx, []byte(value))
+	ctx, val, err := s.value(ctx, value)
 	if err != nil {
-		return ctx, fmt.Errorf("replacing vars in %s: %w", value, err)
-	}
-
-	val, gen, err := s.gen(value)
-	if err != nil {
-		return ctx, err
-	}
-
-	if !gen {
-		if err := json.Unmarshal(rv, &val); err != nil {
-			return ctx, fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
-		}
+		return ctx, fmt.Errorf("%s: %w", name, err)
 	}
 
 	v.Set(s.varPrefix+name, val)
@@ -174,24 +181,117 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 	return ctx, nil
 }
 
-func (s *Steps) gen(value string) (interface{}, bool, error) {
+var commaInBrackets = regexp.MustCompile(`\(.+(,+?).+\)`)
+
+func (s *Steps) value(ctx context.Context, value string) (context.Context, interface{}, error) {
+	ctx, rv, err := s.Replace(ctx, []byte(value))
+	if err != nil {
+		return ctx, nil, fmt.Errorf("replacing vars in %s: %w", value, err)
+	}
+
+	ctx, val, err := s.factory(ctx, value)
+	if err == nil {
+		return ctx, val, nil
+	}
+
+	if err != nil && err != errSkipped { //nolint:errorlint
+		return ctx, nil, err
+	}
+
+	val, err = s.gen(value)
+	if err == nil {
+		return ctx, val, nil
+	}
+
+	if err != nil && err != errSkipped { //nolint:errorlint
+		return ctx, nil, err
+	}
+
+	if err := json.Unmarshal(rv, &val); err != nil {
+		return ctx, nil, fmt.Errorf("decoding variable with value %s as JSON: %w", value, err)
+	}
+
+	return ctx, val, nil
+}
+
+type sentinelError string
+
+func (s sentinelError) Error() string {
+	return string(s)
+}
+
+const errSkipped = sentinelError("skipped")
+
+func (s *Steps) factory(ctx context.Context, value string) (context.Context, interface{}, error) {
+	p := strings.Index(value, "(")
+	if p < 1 {
+		return ctx, nil, errSkipped
+	}
+
+	fn := value[0:p]
+	fn = strings.TrimSpace(fn)
+	f, ok := s.factories[fn]
+
+	if !ok {
+		return ctx, nil, errSkipped
+	}
+
+	if value[len(value)-1] != ')' {
+		return ctx, nil, errors.New("missing closing parenthesis ')' in factory expression")
+	}
+
+	value = value[p+1 : len(value)-1]
+
+	if len(strings.TrimSpace(value)) == 0 {
+		return f(ctx)
+	}
+
+	v := strings.ReplaceAll(value, `\\,`, `\&slashcomma;`)
+	v = strings.ReplaceAll(v, `\,`, `\&comma;`)
+	v = commaInBrackets.ReplaceAllStringFunc(v, func(s string) string {
+		return strings.ReplaceAll(s, `,`, `\&comma;`)
+	})
+
+	var (
+		args  = strings.Split(v, ",")
+		vargs = make([]interface{}, len(args))
+		varg  interface{}
+		err   error
+	)
+
+	for i, arg := range args {
+		arg = strings.ReplaceAll(arg, `\&comma;`, `,`)
+		arg = strings.ReplaceAll(arg, `\&slashcomma;`, `\,`)
+
+		ctx, varg, err = s.value(ctx, arg)
+		if err != nil {
+			return ctx, nil, fmt.Errorf("parse factory argument %d %q: %w", i, arg, err)
+		}
+
+		vargs[i] = varg
+	}
+
+	return f(ctx, vargs...)
+}
+
+func (s *Steps) gen(value string) (interface{}, error) {
 	if !strings.HasPrefix(value, "gen:") {
-		return nil, false, nil
+		return nil, errSkipped
 	}
 
 	gen := value[4:]
 
 	f, ok := s.generators[gen]
 	if !ok {
-		return nil, true, fmt.Errorf("missing generator %q", gen)
+		return nil, fmt.Errorf("missing generator %q", gen)
 	}
 
 	val, err := f()
 	if err != nil {
-		return nil, true, fmt.Errorf("generating value with %q: %w", gen, err)
+		return nil, fmt.Errorf("generating value with %q: %w", gen, err)
 	}
 
-	return val, true, nil
+	return val, nil
 }
 
 func (s *Steps) varEquals(ctx context.Context, name, value string) error {
@@ -229,20 +329,9 @@ func (s *Steps) walkVars(ctx context.Context, table *godog.Table, override map[s
 			continue
 		}
 
-		_, rv, err := s.Replace(ctx, []byte(value))
+		_, val, err := s.value(ctx, value)
 		if err != nil {
-			return fmt.Errorf("replacing vars in %s: %w", row.Cells[1].Value, err)
-		}
-
-		val, gen, err := s.gen(string(rv))
-		if err != nil {
-			return err
-		}
-
-		if !gen {
-			if err := json.Unmarshal(rv, &val); err != nil {
-				return fmt.Errorf("decoding variable %s with value %s as JSON: %w", name, value, err)
-			}
+			return fmt.Errorf("%s: %w", name, err)
 		}
 
 		cb(name, val)

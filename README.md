@@ -46,8 +46,11 @@ Feature: Variables
 
     # Variable can be set with user-defined generator.
     When variable $foo is set to gen:new-id
-
     Then variable $foo equals to 1337
+
+    # Variable can be set with user-defined factory.
+    When variable $userId is set to newUserID("John Doe", addDuration(now(), "-10h"))
+    Then variable $userId equals to 12321
 
     # Set values to multiple variables.
     # Values are decoded into `any` with JSON decoder.
@@ -140,14 +143,17 @@ You can enable variables in your own step definitions with these contextualized 
 
 In some cases you may want to set a variable only once in the feature or globally (in all features).
 
-This is handy if you 
+This is handy if you want to reuse same resources across whole feature or suite.
+
+You can use factory function to produce a singleton with a named variable, see [`ExampleSteps_AddFactory`](./example_test.go).
 
 ```gherkin
     Given variables are set to values once in this feature
-      | $fv1 | gen:featureSeq |
-      | $fv2 | gen:featureSeq |
+      | $user1 | newUserID("John Doe", addDuration(now(), "-10h")) |
+      | $user2 | newUserID("Jane Doe", addDuration(now(), "-20h")) |
 
     And variables are set to values once globally
       | $gv1 | gen:globalSeq |
       | $gv2 | gen:globalSeq |
 ```
+
