@@ -10,9 +10,12 @@ Feature: Variables
     # Assert current value of variable.
     Then variable $foo equals to "abcdef"
 
+    # Variable can be set with user-defined factory.
+    When variable $userId is set to newUserID("$foo", addDuration(now(), "-10h"))
+    Then variable $userId equals to 12321
+
     # Variable can be set with user-defined generator.
     When variable $foo is set to gen:new-id
-
     Then variable $foo equals to 1337
 
     # Set values to multiple variables.

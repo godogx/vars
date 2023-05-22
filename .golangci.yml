@@ -65,5 +65,6 @@ issues:
     - linters:
         - errcheck # Error checking omitted for brevity.
         - gosec
+        - cyclop
       path: "example_"
 

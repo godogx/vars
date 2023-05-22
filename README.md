@@ -44,9 +44,12 @@ Feature: Variables
     # Assert current value of variable.
     Then variable $foo equals to "abcdef"
 
+    # Variable can be set with user-defined factory.
+    When variable $userId is set to newUserID("$foo", addDuration(now(), "-10h"))
+    Then variable $userId equals to 12321
+
     # Variable can be set with user-defined generator.
     When variable $foo is set to gen:new-id
-
     Then variable $foo equals to 1337
 
     # Set values to multiple variables.
@@ -134,4 +137,23 @@ You can enable variables in your own step definitions with these contextualized 
 * `ReplaceFile` is same as `Replace`, but reads byte slice from a file,
 * `Assert` compares two byte slices, collects unknown vars, checks known vars,
 * `AssertFile` is same as `Assert`, but reads expected byte slice from a file,
-* `AssertJSONPaths` checks JSON byte slice against a `godog.Table` with expected values at JSON Paths. 
+* `AssertJSONPaths` checks JSON byte slice against a `godog.Table` with expected values at JSON Paths.
+
+### Setting variable once for multiple scenarios and/or features
+
+In some cases you may want to set a variable only once in the feature or globally (in all features).
+
+This is handy if you want to reuse same resources across whole feature or suite.
+
+You can use factory function to produce a singleton with a named variable, see [`ExampleSteps_AddFactory`](./example_test.go).
+
+```gherkin
+    Given variables are set to values once in this feature
+      | $user1 | newUserID("John Doe", addDuration(now(), "-10h")) |
+      | $user2 | newUserID("Jane Doe", addDuration(now(), "-20h")) |
+
+    And variables are set to values once globally
+      | $gv1 | gen:globalSeq |
+      | $gv2 | gen:globalSeq |
+```
+
