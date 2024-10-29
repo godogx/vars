@@ -28,6 +28,7 @@ func TestFeatures(t *testing.T) { //nolint:cyclop
 		if len(args) != 2 {
 			return ctx, nil, errors.New("addDuration expects 2 arguments: base time, duration")
 		}
+
 		var (
 			base time.Time
 			dur  time.Duration
@@ -41,6 +42,7 @@ func TestFeatures(t *testing.T) { //nolint:cyclop
 			if err != nil {
 				return ctx, nil, fmt.Errorf("parsing base time: %w", err)
 			}
+
 			base = t
 		default:
 			return ctx, nil, fmt.Errorf("unexpected type %T for base time, string or time.Time expected", v)
@@ -54,6 +56,7 @@ func TestFeatures(t *testing.T) { //nolint:cyclop
 			if err != nil {
 				return ctx, nil, fmt.Errorf("parsing duration: %w", err)
 			}
+
 			dur = d
 		default:
 			return ctx, nil, fmt.Errorf("unexpected type %T for duration, string or time.Duration expected", v)
@@ -66,6 +69,7 @@ func TestFeatures(t *testing.T) { //nolint:cyclop
 		if len(args) != 2 {
 			return ctx, nil, errors.New("newUserID expects 2 arguments: name, registeredAt")
 		}
+
 		var (
 			name         string
 			registeredAt time.Time
@@ -86,6 +90,7 @@ func TestFeatures(t *testing.T) { //nolint:cyclop
 			if err != nil {
 				return ctx, nil, fmt.Errorf("parsing registeredAt: %w", err)
 			}
+
 			registeredAt = t
 		default:
 			return ctx, nil, fmt.Errorf("unexpected type %T for registeredAt, string or time.Time expected", v)

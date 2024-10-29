@@ -194,7 +194,7 @@ func (s *Steps) value(ctx context.Context, value string) (context.Context, inter
 		return ctx, val, nil
 	}
 
-	if err != nil && err != errSkipped { //nolint:errorlint
+	if !errors.Is(err, errSkipped) {
 		return ctx, nil, err
 	}
 
@@ -203,7 +203,7 @@ func (s *Steps) value(ctx context.Context, value string) (context.Context, inter
 		return ctx, val, nil
 	}
 
-	if err != nil && err != errSkipped { //nolint:errorlint
+	if !errors.Is(err, errSkipped) {
 		return ctx, nil, err
 	}
 
@@ -259,11 +259,13 @@ func (s *Steps) factory(ctx context.Context, value string) (context.Context, int
 		err   error
 	)
 
+	ctx = s.PrepareContext(ctx)
+
 	for i, arg := range args {
 		arg = strings.ReplaceAll(arg, `\&comma;`, `,`)
 		arg = strings.ReplaceAll(arg, `\&slashcomma;`, `\,`)
 
-		ctx, varg, err = s.value(ctx, arg)
+		_, varg, err = s.value(ctx, arg)
 		if err != nil {
 			return ctx, nil, fmt.Errorf("parse factory argument %d %q: %w", i, arg, err)
 		}
@@ -348,7 +350,7 @@ func (s *Steps) varsAreSetOnceInThisFeature(ctx context.Context, table *godog.Ta
 
 	fv, ok := ctx.Value(fvCtxKey{}).(map[string]interface{})
 	if !ok {
-		return ctx, fmt.Errorf("BUG: missing feature vars in context")
+		return ctx, errors.New("BUG: missing feature vars in context")
 	}
 
 	err := s.walkVars(ctx, table, fv, func(name string, val interface{}) {
