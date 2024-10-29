@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"sort"
 
 	"github.com/bool64/shared"
@@ -101,7 +101,7 @@ func (s *Steps) jc(ctx context.Context) (context.Context, assertjson.Comparer) {
 //
 // It works same as Replace using a file for input.
 func (s *Steps) ReplaceFile(ctx context.Context, filePath string) (context.Context, []byte, error) {
-	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
+	body, err := os.ReadFile(filePath) //nolint // File inclusion via variable during tests.
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -160,12 +160,19 @@ func (s *Steps) Replace(ctx context.Context, body []byte) (context.Context, []by
 
 // AssertFile compares payloads and collects variables from JSON fields.
 func (s *Steps) AssertFile(ctx context.Context, filePath string, received []byte, ignoreAddedJSONFields bool) (context.Context, error) {
-	body, err := ioutil.ReadFile(filePath) //nolint // File inclusion via variable during tests.
+	body, err := os.ReadFile(filePath) //nolint // File inclusion via variable during tests.
 	if err != nil {
 		return ctx, err
 	}
 
 	return s.Assert(ctx, body, received, ignoreAddedJSONFields)
+}
+
+// PrepareContext makes sure context is instrumented with a valid comparer and does not need to be updated later.
+func (s *Steps) PrepareContext(ctx context.Context) context.Context {
+	ctx, _ = s.jc(ctx)
+
+	return ctx
 }
 
 // Assert compares payloads and collects variables from JSON fields.
@@ -222,7 +229,7 @@ func (s *Steps) AssertJSONPaths(ctx context.Context, jsonPaths *godog.Table, rec
 
 		expected := []byte(row.Cells[1].Value)
 
-		ctx, expected, err = s.Replace(ctx, expected)
+		_, expected, err = s.Replace(ctx, expected)
 		if err != nil {
 			return ctx, fmt.Errorf("failed to prepare expected value at jsonpath %s: %w", path, err)
 		}
