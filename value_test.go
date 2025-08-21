@@ -10,7 +10,7 @@ import (
 func TestInfer(t *testing.T) {
 	for _, tc := range []struct {
 		s string
-		v any
+		v interface{}
 	}{
 		{"", ""},
 		{"123", int64(123)},
@@ -20,8 +20,8 @@ func TestInfer(t *testing.T) {
 		{"null", nil},
 		{`"bla\nbla"`, "bla\nbla"},
 		{`"bla\nbl...`, "infer string value \"bla\\nbl...: unexpected end of JSON input"},
-		{`{"foo":"bar"}`, map[string]any{"foo": "bar"}},
-		{`["abc", 1, false, null]`, []any{"abc", 1.0, false, nil}},
+		{`{"foo":"bar"}`, map[string]interface{}{"foo": "bar"}},
+		{`["abc", 1, false, null]`, []interface{}{"abc", 1.0, false, nil}},
 		{`{"foo":"ba....`, "infer JSON value {\"foo\":\"ba....: unexpected end of JSON input"},
 	} {
 		t.Run(tc.s, func(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 // If s starts with double quote ", string decoded from JSON is returned (mind JSON escaping rules).
 // If s starts with [ or {, any decoded from JSON is returned.
 // Otherwise, s is returned as is.
-func Infer(s string) any {
+func Infer(s string) interface{} {
 	switch s {
 	case "":
 		return ""
@@ -36,7 +36,7 @@ func Infer(s string) any {
 	}
 
 	if s[0] == '[' || s[0] == '{' {
-		var v any
+		var v interface{}
 		if err := json.Unmarshal([]byte(s), &v); err != nil {
 			return fmt.Errorf("infer JSON value %s: %w", s, err)
 		}
