@@ -3,7 +3,7 @@ module github.com/godogx/vars
 go 1.18
 
 require (
-	github.com/bool64/dev v0.2.36
+	github.com/bool64/dev v0.2.41
 	github.com/bool64/shared v0.1.5
 	github.com/cucumber/godog v0.14.1
 	github.com/stretchr/testify v1.9.0
