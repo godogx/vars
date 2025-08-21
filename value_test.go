@@ -29,6 +29,7 @@ func TestInfer(t *testing.T) {
 			if err, ok := v.(error); ok {
 				v = err.Error()
 			}
+
 			assert.Equal(t, tc.v, v)
 		})
 	}
