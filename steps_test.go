@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFeatures(t *testing.T) { //nolint:cyclop
+func TestFeatures(t *testing.T) {
 	vs := vars.Steps{}
 	vs.AddGenerator("new-id", func() (interface{}, error) {
 		return 1337, nil
