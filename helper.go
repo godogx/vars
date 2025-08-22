@@ -109,6 +109,36 @@ func (s *Steps) ReplaceFile(ctx context.Context, filePath string) (context.Conte
 	return s.Replace(ctx, body)
 }
 
+// ReplaceTable performs in-place replacement of vars in table cells.
+func (s *Steps) ReplaceTable(ctx context.Context, data [][]string) (context.Context, error) {
+	ctx, _ = s.Vars(ctx)
+
+	for _, r := range data {
+		for j, cell := range r {
+			_, rc, err := s.ReplaceString(ctx, cell)
+			if err != nil {
+				return ctx, err
+			}
+
+			if rc != cell {
+				r[j] = rc
+			}
+		}
+	}
+
+	return ctx, nil
+}
+
+// ReplaceString replaces vars in a string.
+func (s *Steps) ReplaceString(ctx context.Context, body string) (context.Context, string, error) {
+	ctx, b, err := s.Replace(ctx, []byte(body))
+	if err != nil {
+		return ctx, "", err
+	}
+
+	return ctx, string(b), nil
+}
+
 // Replace replaces vars in bytes slice.
 //
 // This function can help to interpolate variables into predefined templates.
@@ -142,7 +172,12 @@ func (s *Steps) Replace(ctx context.Context, body []byte) (context.Context, []by
 	}
 
 	sort.Slice(varNames, func(i, j int) bool {
-		return len(varNames[i]) > len(varNames[j])
+		// Compare lengths first (longer comes first)
+		if len(varNames[i]) != len(varNames[j]) {
+			return len(varNames[i]) > len(varNames[j])
+		}
+		// If lengths are equal, sort alphabetically
+		return varNames[i] < varNames[j]
 	})
 
 	for _, k := range varNames {
@@ -173,6 +208,11 @@ func (s *Steps) PrepareContext(ctx context.Context) context.Context {
 	ctx, _ = s.jc(ctx)
 
 	return ctx
+}
+
+// AssertString compares payloads and collects variables from JSON fields.
+func (s *Steps) AssertString(ctx context.Context, expected, received string, ignoreAddedJSONFields bool) (context.Context, error) {
+	return s.Assert(ctx, []byte(expected), []byte(received), ignoreAddedJSONFields)
 }
 
 // Assert compares payloads and collects variables from JSON fields.
