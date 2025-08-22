@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // Infer parses a value from a string into a suitable type.
@@ -11,6 +12,7 @@ import (
 // If s is parsed as float, float64 is returned.
 // If s has unquoted values of true or false, bool is returned.
 // If s is equal to unquoted null, nil is returned.
+// If s can be parsed as time.RFC3339, time.RFC3339Nano, "2006-01-02" or "2006-01-02 15:04:05", time.Time is returned.
 // If s starts with double quote ", string decoded from JSON is returned (mind JSON escaping rules).
 // If s starts with [ or {, any decoded from JSON is returned.
 // Otherwise, s is returned as is.
@@ -50,6 +52,13 @@ func Infer(s string) interface{} {
 
 	if f, err := strconv.ParseFloat(s, 64); err == nil {
 		return f
+	}
+
+	for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02", "2006-01-02 15:04:05"} {
+		t, err := time.Parse(layout, s)
+		if err == nil {
+			return t
+		}
 	}
 
 	return s
