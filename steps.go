@@ -83,6 +83,9 @@ func (s *Steps) Register(sc *godog.ScenarioContext) {
 	// """
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) is set to$`, s.varIsSet)
 
+	// When variable $foo is deleted
+	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) is deleted$`, s.varIsDeleted)
+
 	// Then variable $foo equals to "abcdef"
 	sc.Step(`^variable \`+s.varPrefix+`([\w\d]+) equals to (.+)$`, s.varEquals)
 
@@ -177,6 +180,14 @@ func (s *Steps) varIsSet(ctx context.Context, name, value string) (context.Conte
 	}
 
 	v.Set(s.varPrefix+name, val)
+
+	return ctx, nil
+}
+
+func (s *Steps) varIsDeleted(ctx context.Context, name string) (context.Context, error) {
+	ctx, v := s.Vars(ctx)
+
+	v.Delete(s.varPrefix + name)
 
 	return ctx, nil
 }

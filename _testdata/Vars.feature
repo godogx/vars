@@ -10,6 +10,11 @@ Feature: Variables
     # Assert current value of variable.
     Then variable $foo equals to "abcdef"
 
+    # Delete removes a variable, so it goes back to being undefined.
+    When variable $foo is deleted
+    Then variable $foo is undefined
+    When variable $foo is set to "abcdef"
+
     # Variable can be set with user-defined factory.
     When variable $userId is set to newUserID("$foo", addDuration(now(), "-10h"))
     Then variable $userId equals to 12321
