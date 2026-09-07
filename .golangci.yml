@@ -5,6 +5,7 @@ run:
 linters:
   default: all
   disable:
+    - modernize
     - noinlineerr
     - err113
     - wsl_v5
@@ -48,6 +49,7 @@ linters:
     generated: lax
     rules:
       - linters:
+          - prealloc
           - dupl
           - funlen
           - goconst
