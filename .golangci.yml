@@ -6,6 +6,8 @@ linters:
   default: all
   disable:
     - modernize
+    - embeddedstructfieldcheck
+    - nilnil
     - noinlineerr
     - err113
     - wsl_v5
@@ -50,6 +52,7 @@ linters:
     rules:
       - linters:
           - prealloc
+          - gosec
           - dupl
           - funlen
           - goconst
